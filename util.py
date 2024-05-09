@@ -1,5 +1,4 @@
 import traceback
-
 import telegram
 import asyncio
 import aiohttp
@@ -9,19 +8,18 @@ import json
 import os
 from logging.handlers import TimedRotatingFileHandler
 
-from api import binance
 from consts import *
 from datetime import datetime, timezone, timedelta
 bot = None
 chat_id_list = None
 
-def setup_collect_logging():
+def setup_logging():
     logging.basicConfig(level=logging.INFO)
     # TimedRotatingFileHandler를 설정하여 날짜별로 로그 파일을 회전
     if ENV == 'real':
-        log_file_path = '/root/arbitrage/log/premium.log'
+        log_file_path = '/root/fexchange/log/fexchange.log'
     elif ENV == 'local':
-        log_file_path = 'C:/Users/skdba/PycharmProjects/arbitrage/log/premium.log'
+        log_file_path = 'C:/Users/skdba/PycharmProjects/fexchange/log/fexchange.log'
 
     # 파일 핸들러 생성 및 설정
 
@@ -40,34 +38,6 @@ def setup_collect_logging():
     # 루트 로거에 핸들러 추가
     root_logger = logging.getLogger()
     root_logger.addHandler(file_handler)
-
-def setup_order_logging():
-    logging.basicConfig(level=logging.INFO)
-    # TimedRotatingFileHandler를 설정하여 날짜별로 로그 파일을 회전
-    if ENV == 'real':
-        log_file_path = '/root/arbitrage/log/order.log'
-    elif ENV == 'local':
-        log_file_path = 'C:/Users/skdba/PycharmProjects/arbitrage/log/order.log'
-
-    # 파일 핸들러 생성 및 설정
-
-    file_handler = TimedRotatingFileHandler(filename=log_file_path, when='midnight', interval=1, backupCount=30)
-    file_handler.suffix = "%Y%m%d"
-    file_handler.setLevel(logging.INFO)
-
-    # 로그 포매터 설정
-    if ENV == 'real':
-        formatter = logging.Formatter('[%(asctime)s][%(levelname)s]:%(message)s')
-    elif ENV == 'local':
-        formatter = logging.Formatter('[%(asctime)s][%(levelname)s]:%(message)s ...(%(filename)s:%(lineno)d)')
-
-    file_handler.setFormatter(formatter)
-
-    # 루트 로거에 핸들러 추가
-    root_logger = logging.getLogger()
-    root_logger.addHandler(file_handler)
-
-
 
 async def get_chat_id():
     logging.info("Telegram Chat ID 요청합니다..")
@@ -86,7 +56,8 @@ async def get_chat_id():
                 else:
                     logging.info(f"Telegram Chat ID 요청 응답 오류: {response.status}")
         except aiohttp.ClientError as e:
-            logging.info(f"Telegram 세션연결 오류: {e}")
+            logging.info(f"Telegram 세션 연결 오류: {e}")
+
 async def send_to_telegram(message):
     # 텔레그램 메시지 보내는 함수, 최대 3회 연결, 3회 전송 재시도 수행
     global bot
@@ -96,7 +67,7 @@ async def send_to_telegram(message):
         chat_id_list = await get_chat_id()
         #logging.info(f"Telegram Chat ID 값 취득 : {get_chat_id()}")
         # chat_id_list = ['1109591824'] # 준우
-        # chat_id_list = ['1109591824', '2121677449']  #
+        #chat_id_list = ['1109591824', '2121677449']  #
         chat_id_list = ['2121677449']  # 규빈
         logging.info(f"Telegram Chat ID 값 취득 : {chat_id_list}")
 
@@ -148,297 +119,3 @@ async def send_to_telegram_image(image):
                 logging.info(f"Telegram 연결 해제... {e}")
                 bot = None
                 break
-
-def is_need_reset_socket(start_time):
-    now = datetime.now()
-    one_days_ago = now - timedelta(days=1)
-
-    if start_time < one_days_ago:
-        return True
-    else:
-        return
-
-def load_remain_position(position_data, trade_data, position_ticker_count):
-    if ENV == 'real':
-        load_path = '/root/arbitrage/data/position_data.DAT'
-    elif ENV == 'local':
-        load_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/position_data.DAT'
-
-    if os.path.exists(load_path):
-        with open(load_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        for line in lines:
-            try:
-                split_data = line.split('|')
-                ticker = split_data[0]
-                type = split_data[1]
-                data = split_data[2]
-                if type == 'POSITION':
-                    position_ticker_count['count'] += 1
-                    position_data[ticker] = json.loads(data)
-                    logging.info(f"FILE_LOAD|POSITION_DATA|{ticker}")
-                elif type == 'TRADE':
-                    trade_data[ticker] = json.loads(data)
-                    logging.info(f"FILE_LOAD|TRADE_DATA|{ticker}")
-            except Exception as e:
-                logging.info(e)
-                
-    else:
-        logging.info(f"{load_path} There is no file")
-        
-
-def put_remain_position(position_data, trade_data):
-    put_path = ''
-    put_data = ''
-
-    if ENV == 'real':
-        put_path = '/root/arbitrage/data/position_data.DAT'
-    elif ENV == 'local':
-        put_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/position_data.DAT'
-
-    for ticker in position_data:
-        if position_data[ticker]['position'] == 1:
-            put_data += ticker + "|POSITION|" + json.dumps(position_data[ticker]) + "|\n"
-            put_data += ticker + "|TRADE|" + json.dumps(trade_data[ticker]) + "|\n"
-
-    with open(put_path, 'w') as file:
-        file.write(put_data)
-
-def load_profit_data(message):
-    year_month = datetime.now().strftime("%Y%m")
-    if ENV == 'real':
-        load_path = '/root/arbitrage/data/profit_data_'+year_month+'.DAT'
-    elif ENV == 'local':
-        load_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/profit_data_'+year_month+'.DAT'
-
-    if os.path.exists(load_path):
-        with open(load_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        acc_profit = 0
-        acc_profit_rate =0
-        for line in lines:
-            try:
-                split_data = line.split('|')
-                ticker = split_data[1]
-                profit = split_data[7]
-                profit_rate = split_data[9]
-
-                acc_profit += float(profit)
-                acc_profit_rate += float(profit_rate)
-            except:
-                continue
-
-        if acc_profit > 0:
-            logging.info(f"FILE_LOAD|PROFIT_DATA {acc_profit}|{acc_profit_rate}")
-            message = f"{round(acc_profit,0):,}원|{round(acc_profit_rate,3)}%"
-    else:
-        logging.info(f"{load_path} There is no file")
-        
-    return message
-
-def put_profit_data(ticker, open_gimp, close_gimp, profit, balance):
-    put_path = ''
-
-    year_month = datetime.now().strftime("%Y%m")
-    time = datetime.now().strftime("%Y-%m-%d %H:%m")
-    if ENV == 'real':
-        put_path = '/root/arbitrage/data/profit_data_'+year_month+'.DAT'
-    elif ENV == 'local':
-        put_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/profit_data_'+year_month+'.DAT'
-
-    put_data = (
-            str(time) + '|' + str(ticker) + "|OPEN|" + str(open_gimp) + '|CLOSE|' + str(close_gimp)
-            + '|PROFIT|' + str(profit) + '|PROFIT_RATE|' + str(round(float(profit)/(float(balance) * 2) * 100, 3)) + '\n'
-    )
-    with open(put_path, 'a') as file:
-        file.write(put_data)
-
-
-def load_orderbook_check(orderbook_check):
-    if ENV == 'real':
-        load_path = '/root/arbitrage/data/orderbook_check.json'
-    elif ENV == 'local':
-        load_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/orderbook_check.json'
-
-    if os.path.exists(load_path):
-        with open(load_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        for line in lines:
-            try:
-                print("LOAD orderbook CHECK")
-                orderbook_check.update(json.loads(line))
-                print(orderbook_check)
-            except Exception as e:
-                logging.info(e)
-    else:
-        logging.info(f"{load_path} There is no file")
-
-def put_orderbook_check(orderbook_check):
-    put_path = ''
-
-    if ENV == 'real':
-        put_path = '/root/arbitrage/data/orderbook_check.json'
-    elif ENV == 'local':
-        put_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/orderbook_check.json'
-
-    put_data = json.dumps(orderbook_check)
-
-    with open(put_path, 'w') as file:
-        file.write(put_data)
-
-def load_profit_count(position_data):
-    if ENV == 'real':
-        load_path = '/root/arbitrage/data/profit_count.DAT'
-    elif ENV == 'local':
-        load_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/profit_count.DAT'
-
-    if os.path.exists(load_path):
-        with open(load_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        for line in lines:
-            try:
-                split_data = line.split('|')
-                ticker = split_data[0]
-                data = split_data[1]
-                temp_data = json.loads(data)
-                if ticker in position_data:
-                    position_data[ticker]['profit_count'] = temp_data['profit_count']
-                    position_data[ticker]['front_close_gimp'] = temp_data['front_close_gimp']
-                elif ticker not in position_data:
-                    position_data[ticker] = json.loads(data)
-                logging.info(f"FILE_LOAD|PROFIT_COUNT|{ticker}")
-                
-            except Exception as e:
-                logging.info(e)
-    else:
-        logging.info(f"{load_path} There is no file")
-        
-
-def put_profit_count(position_data):
-    put_path = ''
-    put_data = ''
-
-    if ENV == 'real':
-        put_path = '/root/arbitrage/data/profit_count.DAT'
-    elif ENV == 'local':
-        put_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/profit_count.DAT'
-
-    for ticker in position_data:
-        if position_data[ticker]['profit_count'] >= 1 and position_data[ticker]['position'] == 0:
-            put_data += ticker + "|" + json.dumps(position_data[ticker]) + "\n"
-
-    with open(put_path, 'w') as file:
-        file.write(put_data)
-
-def load_low_gimp(exchange_data):
-    if ENV == 'real':
-        low_gimp_path = '/root/arbitrage/data/low_gimp.DAT'
-    elif ENV == 'local':
-        low_gimp_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/low_gimp.DAT'
-
-    if os.path.exists(low_gimp_path):
-        with open(low_gimp_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        for line in lines:
-            try:
-                low_gimp = float(line)
-                exchange_data['low_gimp'] = low_gimp
-                logging.info(f"LOW_GIMP|{exchange_data['low_gimp']}")
-            except Exception as e:
-                logging.info(e)
-
-    else:
-        print(f"There is no File {low_gimp_path}")
-        logging.info(f"{low_gimp_path} There is no file")
-
-def put_low_gimp(exchange_data):
-    put_path = ''
-
-    if ENV == 'real':
-        put_path = '/root/arbitrage/data/low_gimp.DAT'
-    elif ENV == 'local':
-        put_path = 'C:/Users/skdba/PycharmProjects/arbitrage/data/low_gimp.DAT'
-
-    put_data = str(exchange_data['low_gimp'])
-    with open(put_path, 'w') as file:
-        file.write(put_data)
-
-def load_history_data():
-    # 오늘 날짜 가져오기
-    now_date = datetime.date.today()
-    today = now_date.strftime("%Y%m%d")
-    # 하루 전 날짜 계산
-    yesterday = now_date - datetime.timedelta(days=1)
-    yesterday = yesterday.strftime("%Y%m%d")
-
-    if ENV == 'real':
-        history_file_path = '/root/arbitrage/log/premium_data_'+yesterday
-    elif ENV == 'local':
-        history_file_path = 'C:/Users/skdba/PycharmProjects/arbitrage/log/premium_data_'+yesterday
-        #history_file_path = 'C:/Users/skdba/PycharmProjects/arbitrage/log/premium_data_20231107'
-        history_file_path = 'C:/Users/skdba/PycharmProjects/arbitrage/log/premium_data'
-
-    if os.path.exists(history_file_path):
-        logging.info(history_file_path)
-        with open(history_file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-    else:
-        logging.info(f"{history_file_path} 파일이 존재하지 않습니다.")
-
-    return lines
-
-def get_profit_position(orderbook_check, position_data, trade_data, remain_bid_balance):
-    # 오늘 날짜 가져오기
-    try:
-        btc_open_gimp = 0
-        open_timestamp = []
-        open_message = {}
-        message = ''
-        for ticker in position_data:
-            if position_data[ticker]['position'] == 1:
-                time_object_utc = datetime.utcfromtimestamp(position_data[ticker]['open_timestamp'])
-                time_object_korea = time_object_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
-
-                close_bid = float(orderbook_check[ticker]['Upbit']['balance_bid_average'])
-                close_ask = float(orderbook_check[ticker]['Binance']['balance_ask_average'])
-                open_bid_btc = float(orderbook_check['BTC']['Upbit']['balance_ask_average'])
-                open_ask_btc = float(orderbook_check['BTC']['Binance']['balance_bid_average'])
-
-                if close_bid == 0 or close_ask == 0:
-                    continue
-                if open_bid_btc == 0 or open_ask_btc == 0:
-                    continue
-
-                close_gimp = round(close_bid / close_ask * 100 - 100, 2)
-                btc_open_gimp = round(open_bid_btc / open_ask_btc * 100 - 100, 2)
-
-                open_timestamp.append(time_object_korea)
-                open_message[time_object_korea] = (
-                    f"🌝{ticker}({position_data[ticker]['open_install_count']}/{position_data[ticker]['close_install_count']})"
-                    f"|{position_data[ticker]['position_gimp']}~{close_gimp}%"
-                    f"|{round(trade_data[ticker]['open_bid_price_acc'], 0) - round(trade_data[ticker]['close_bid_price_acc'], 0):,}원"
-                    f"|{time_object_korea.strftime('%m-%d %H:%M')}\n"
-                )
-
-        for i in range(len(open_timestamp)):
-            timestamp = min(open_timestamp)
-            temp_message = str(open_message[timestamp])
-            message += temp_message
-            open_timestamp.remove(timestamp)
-
-        if remain_bid_balance['balance'] < BALANCE:
-            message += f"💰잔액: {round(remain_bid_balance['balance'], 0):,}원|BTC김프: {btc_open_gimp}%"
-
-        if len(message) == 0:
-            message = f"🌚 진입 정보 없음"
-
-        return message
-    except Exception as e:
-        message = f"🌚 1분 후 재시도..."
-        logging.info(traceback.format_exc())
-        return message
