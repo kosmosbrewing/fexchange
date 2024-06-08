@@ -2,7 +2,6 @@ from collections import deque
 import logging
 from consts import *
 
-@profile
 def compare_price(exchange_data, orderbook_check, check_data, accum_ticker_count, accum_ticker_data):
     """ self.exchange_data 저장된 거래소별 코인정보를 비교하고 특정 (%)이상 갭발생시 알림 전달하는 함수 """
     for ticker in orderbook_check:
